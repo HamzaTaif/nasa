@@ -265,7 +265,7 @@ export default function CanvasEarth({ selectedCity, selectionKey, paused, clicke
       frame = 0
       if (!visible || !textures || !surface) return
       const { selectedCity: city, paused: idlePaused, clickedPoint: click } = current.current
-      const spinning = !city && !idlePaused && !preference.matches && !drag && time >= holdUntil
+      const spinning = !idlePaused && !drag && time >= holdUntil
       const pulsing = Boolean(city && !preference.matches && time - markerStarted < pulseDuration)
       if (!needsPaint && wasPulsing === pulsing && time - previousFrame < 42) {
         if (transition || spinning || pulsing) requestFrame()
@@ -282,7 +282,8 @@ export default function CanvasEarth({ selectedCity, selectionKey, paused, clicke
         }
         if (progress === 1) transition = null
       } else if (spinning && previousFrame) {
-        view = { ...view, lng: wrap(view.lng + Math.min(80, time - previousFrame) * 0.0025) }
+        const speed = city ? 0.005 : 0.012
+        view = { ...view, lng: wrap(view.lng + Math.min(80, time - previousFrame) * speed) }
       }
       previousFrame = time
       needsPaint = false

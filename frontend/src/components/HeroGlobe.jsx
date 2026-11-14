@@ -104,7 +104,7 @@ export default function HeroGlobe({ selection, clickedPoint, onLocationSelect })
                 <Earth
                   selectedCity={city}
                   selectionKey={selection?.key}
-                  paused={Boolean(city)}
+                  paused={false}
                   clickedPoint={clickedPoint}
                   onLocationSelect={onLocationSelect}
                   onReady={() => setReady(true)}

@@ -186,7 +186,8 @@ export default function Globe({ selectedCity, selectionKey, paused, clickedPoint
     const renderer = instance.renderer()
     const canvas = renderer.domElement
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.6))
-    controls.autoRotateSpeed = 0.5
+    controls.autoRotate = true
+    controls.autoRotateSpeed = 1.6
     controls.enableZoom = false
     controls.enablePan = false
 
@@ -201,7 +202,10 @@ export default function Globe({ selectedCity, selectionKey, paused, clickedPoint
       window.clearTimeout(idleTimer.current)
       idleTimer.current = window.setTimeout(() => {
         setMoving(false)
-      }, 2200)
+        if (instance?.controls) {
+          instance.controls().autoRotate = true
+        }
+      }, 2000)
     }
     const onContextLost = event => {
       event.preventDefault()
@@ -212,6 +216,7 @@ export default function Globe({ selectedCity, selectionKey, paused, clickedPoint
     controls.addEventListener('end', endInteraction)
     canvas.addEventListener('webglcontextlost', onContextLost)
     instance.pointOfView(startView, 0)
+    instance.resumeAnimation()
     updateSun()
     const readyFrame = requestAnimationFrame(() => callbacks.current.onReady?.())
 
@@ -228,21 +233,34 @@ export default function Globe({ selectedCity, selectionKey, paused, clickedPoint
   useEffect(() => {
     if (!initialized) return
     const instance = globe.current
-    instance.controls().autoRotate = inView && !paused && !selectedCity && !moving && !motionReduced
+    const controls = instance.controls()
+    controls.autoRotate = inView && !moving
+    controls.autoRotateSpeed = selectedCity ? 0.7 : 1.6
     if (inView) instance.resumeAnimation()
     else instance.pauseAnimation()
-  }, [initialized, inView, paused, selectedCity, moving, motionReduced])
+  }, [initialized, inView, moving, selectedCity])
 
   useEffect(() => {
     if (!initialized || !selectedCity) return
     const instance = globe.current
-    instance.controls().autoRotate = false
+    const controls = instance.controls()
+    controls.autoRotate = false
     instance.pointOfView({
       lat: selectedCity.lat,
       lng: selectedCity.lon,
       altitude: 1.5,
-    }, motionReduced ? 0 : 1350)
-  }, [initialized, selectedCity, selectionKey, motionReduced])
+    }, 1350)
+
+    const resumeTimer = window.setTimeout(() => {
+      if (!moving && instance.controls) {
+        const c = instance.controls()
+        c.autoRotate = true
+        c.autoRotateSpeed = 0.7
+      }
+    }, 3200)
+
+    return () => window.clearTimeout(resumeTimer)
+  }, [initialized, selectedCity, selectionKey, moving])
 
   function onKeyDown(event) {
     if (!initialized) return
