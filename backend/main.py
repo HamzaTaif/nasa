@@ -108,9 +108,18 @@ def root():
 
 
 @app.get("/api/analyze")
-async def analyze(request: Request, city: str, metric: str, start: int, end: int):
+async def analyze(
+    request: Request,
+    city: str,
+    metric: str,
+    start: int,
+    end: int,
+    lat: Optional[float] = Query(None, description="Optional latitude for dynamic worldwide geocoded cities"),
+    lon: Optional[float] = Query(None, description="Optional longitude for dynamic worldwide geocoded cities"),
+):
     """
     Standard statistical analysis endpoint consumed by the frontend and CLI.
+    Supports catalog cities or any dynamic global lat/lon coordinates.
     Example: /api/analyze?city=peshawar&metric=T2M&start=2001&end=2025
     """
     city_lower = city.strip().lower()
@@ -118,8 +127,11 @@ async def analyze(request: Request, city: str, metric: str, start: int, end: int
     if not city_info:
         city_info = find_city(city)
 
+    if not city_info and lat is not None and lon is not None:
+        city_info = {"id": city_lower, "name": city.replace('-', ' ').title(), "lat": lat, "lon": lon}
+
     if not city_info or metric not in METRICS:
-        raise HTTPException(status_code=422, detail="Choose a supported city and climate metric.")
+        raise HTTPException(status_code=422, detail="Choose a supported city or provide valid coordinates, and select a valid climate metric.")
 
     latest_year = datetime.now(timezone.utc).year - 1
     first_year = METRICS[metric].get("firstYear", 1981)

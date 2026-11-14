@@ -4,6 +4,7 @@ import {
 } from 'lucide-react'
 import { cities, examples, metrics, parseClaim } from './claims'
 import { analyzeClaim, POWER_DOCS, readSnapshot } from './power'
+import { geocodeCity } from './geocode'
 import SearchBar from './components/SearchBar'
 import TrendChart from './components/TrendChart'
 import VerdictCard, { signed } from './components/VerdictCard'
@@ -37,7 +38,7 @@ function Methodology({ dialog }) {
         <h3>How the verdict works</h3>
         <p>Ordinary least squares fits the annual values over time. A two-sided Student t-test checks the zero-slope hypothesis at p &lt; 0.05. Confirmed means the slope agrees with the claim and passes the test. Partially true means the slope agrees and evidence is inconclusive. Not supported means the fitted slope is flat or points the other way.</p>
         <p>The test assumes independent residuals with constant variance. Serial correlation can affect the p-value. Unusual years are flagged when their residual exceeds twice the residual standard error. A trend describes the data within the selected years. Identifying its cause requires a separate study.</p>
-        <details><summary>Supported cities ({cities.length})</summary><p>{cities.map(city => city.name).join(', ')}. Hyderabad refers to Hyderabad, Pakistan.</p></details>
+        <details><summary>Supported cities</summary><p>Worldwide coverage: any city, town, or location on Earth is supported via live OpenStreetMap geocoding and NASA coordinates. Regional centers ({cities.map(city => city.name).slice(0, 10).join(', ')}, etc.) include instant pre-cached snapshots.</p></details>
         <details><summary>Supported climate metrics ({Object.keys(metrics).length})</summary><p>{Object.values(metrics).map(metric => metric.name).join(', ')}.</p></details>
         <a className="text-link" href={POWER_DOCS} target="_blank" rel="noreferrer">NASA POWER documentation <ArrowUpRight size={16} /></a>
       </div>
@@ -151,6 +152,13 @@ export default function App() {
     setError(null)
 
     try {
+      if (parsed.needsGeocode) {
+        setPendingClaim(`Locating ${parsed.searchQuery}...`)
+        const geoCity = await geocodeCity(parsed.searchQuery, controller.signal)
+        if (controller.signal.aborted) return
+        parsed.city = geoCity
+        setPendingClaim(parsed.claim)
+      }
       const verified = await analyzeClaim(parsed, controller.signal)
       if (controller.signal.aborted) return
       setResult(verified)
@@ -192,9 +200,12 @@ export default function App() {
             <img src={`${import.meta.env.BASE_URL}earth.webp`} alt="" width="920" height="920" fetchPriority="high" />
           </div>
           <div className="page-shell hero-inner">
-            <a href={POWER_DOCS} className="data-pill" target="_blank" rel="noreferrer"><Satellite size={14} aria-hidden="true" /> Powered by NASA POWER</a>
+            <div className="hero-pills">
+              <a href={POWER_DOCS} className="data-pill" target="_blank" rel="noreferrer"><Satellite size={14} aria-hidden="true" /> Powered by NASA POWER</a>
+              <span className="earth-pill">🌍 Works for any city on Earth</span>
+            </div>
             <h1>Put climate claims<br className="hero-break" /> to the test.</h1>
-            <p className="hero-copy">Enter a claim about your city to explore the trend in NASA data and see how strong the evidence is.</p>
+            <p className="hero-copy">Enter a claim about any city worldwide to explore the trend in NASA data and see how strong the evidence is.</p>
             <SearchBar value={claim} onChange={updateClaim} onSubmit={verify} onExample={value => verify(value, true)} busy={Boolean(pendingClaim)} invalid={error?.input} />
             {error && <div className="claim-error" id="claim-error" role="alert"><CircleAlert size={17} /> {error.message}</div>}
           </div>

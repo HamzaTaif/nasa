@@ -23,6 +23,44 @@ const stable = /\b(?:unchanged|stable|flat|stayed (?:the same|steady)|no (?:chan
 const explore = /\b(?:trend|show|plot|chart|history|historical|chang\w*|data)\b/i
 const unsupported = /\b(?:heat\s?waves?|hot days|cold snaps?|flood\w*|drought\w*|every year|each year|record.breaking|record (?:high|low)|hottest|coldest|wettest|driest|monsoon|spring|summer|autumn|winter|(?:in|during) fall|january|february|march|april|may to|june|july|august|september|october|november|december|this year|last year|year.to.date|caused by|because|due to|worldwide|globally)\b/i
 
+export function extractCityCandidate(claim) {
+  let text = claim.trim()
+  text = text.replace(/^(?:is|are|was|were|has|have|had|does|did|can|could|will|would|please|tell me if|check if)\s+/i, '')
+
+  // 1. Look for prepositions: "in [City]", "for [City]", "at [City]", "of [City]"
+  const prepMatch = text.match(/\b(?:in|at|for|around|near|of)\s+([A-Za-z\u00C0-\u024F\s.'-]+?)(?:\s+(?:is|are|was|were|has|have|had|temperature|rainfall|precipitation|humidity|solar|sunlight|wind|since|from|between|to|through|during|\d{4}|$)|[?!.,;]|$)/i)
+  if (prepMatch && prepMatch[1].trim()) {
+    const candidate = prepMatch[1].trim().replace(/^(?:the|a|an)\s+/i, '')
+    if (candidate.length >= 2) return candidate
+  }
+
+  // 2. Look at start: "[City] is ...", "[City] temperatures ...", etc.
+  const startMatch = text.match(/^([A-Za-z\u00C0-\u024F\s.'-]+?)(?:\s+(?:is|are|was|were|has|have|had|temperature|rainfall|precipitation|humidity|solar|sunlight|wind|warming|hotter|cooler|colder|getting|trend|daily|annual|mean|highs|lows)\b|[?!.,;])/i)
+  if (startMatch && startMatch[1].trim()) {
+    const candidate = startMatch[1].trim().replace(/^(?:the|a|an)\s+/i, '')
+    if (candidate.length >= 2) return candidate
+  }
+
+  // 3. Fallback: strip known stopwords and metric words
+  let stripped = text
+    .replace(/\b(?:show|plot|chart|explore|trend|data|history|historical|claim|analyze|verify)\b/gi, '')
+    .replace(/\b(?:daily highs?|daily lows?|high temperatures?|low temperatures?|temperatures?|warming|warmer|hotter|cooling|cooler|colder|heating up)\b/gi, '')
+    .replace(/\b(?:rainfall|raining|rain|precipitation|wetter|drier)\b/gi, '')
+    .replace(/\b(?:humid(?:ity)?|muggy|moisture in the air)\b/gi, '')
+    .replace(/\b(?:solar (?:irradiance|radiation)|sunlight)\b/gi, '')
+    .replace(/\b(?:wind speed|winds?|windier)\b/gi, '')
+    .replace(/\b(?:increas\w*|ris\w*|rose|higher|more|grew|grow\w*|upward|went up|go(?:ne|ing)? up|intensif\w*)\b/gi, '')
+    .replace(/\b(?:decreas\w*|declin\w*|fall\w*|fell|dropp?\w*|lower|less|downward|went down|go(?:ne|ing)? down|weaken\w*)\b/gi, '')
+    .replace(/\b(?:since|from|until|through|up to|after|between|to|and|past|last|years?|decades?)\b/gi, '')
+    .replace(/\b\d{4}\b/g, '')
+    .replace(/\b(?:is|are|was|were|getting|in|at|of|for|the|a|an)\b/gi, '')
+    .replace(/[^A-Za-z\u00C0-\u024F\s-]/g, '')
+    .trim()
+    .replace(/\s+/g, ' ')
+
+  return stripped.length >= 2 ? stripped : null
+}
+
 export function parseClaim(claim, latestYear = new Date().getUTCFullYear() - 1) {
   const input = claim.trim().replace(/\s+/g, ' ')
   if (unsupported.test(input) || /\b(?:by|than|above|below|over|under)\s*[+-]?\d+(?:\.\d+)?\s*(?:°|%|mm\b|degrees?\b)/i.test(input)) {
@@ -32,10 +70,26 @@ export function parseClaim(claim, latestYear = new Date().getUTCFullYear() - 1) 
   const matchedCities = cities.filter(city => [city.name, ...(city.aliases ?? [])].some(name => {
     return new RegExp(`(?:^|[^a-z])${name}(?:[^a-z]|$)`, 'i').test(input)
   }))
-  if (matchedCities.length > 1) throw new Error('Enter one city per claim.')
-  if (!matchedCities.length) throw new Error('Name a supported city, such as Peshawar, Lahore, Karachi, or Islamabad. The full list is in Methodology.')
-  if (/\b(?:hyderabad\s*,?\s+india|indian hyderabad)\b/i.test(input)) {
-    throw new Error('The city catalog currently includes Hyderabad, Pakistan. Choose a listed city for this analysis.')
+
+  let selectedCity = null
+  let candidateCity = null
+  let needsGeocode = false
+
+  if (matchedCities.length === 1) {
+    selectedCity = matchedCities[0]
+  } else if (matchedCities.length > 1) {
+    const sorted = [...matchedCities].sort((a, b) => b.name.length - a.name.length)
+    if (sorted[0].name.toLowerCase().includes(sorted[1].name.toLowerCase())) {
+      selectedCity = sorted[0]
+    } else {
+      throw new Error('Enter one city per claim.')
+    }
+  } else {
+    candidateCity = extractCityCandidate(input)
+    if (!candidateCity) {
+      throw new Error('Please include a city name in your claim (e.g. "Berlin is getting hotter" or "Rainfall in Tokyo is increasing").')
+    }
+    needsGeocode = true
   }
 
   let matchingMetrics = rules.filter(([, pattern]) => pattern.test(input)).map(([key]) => key)
@@ -81,5 +135,14 @@ export function parseClaim(claim, latestYear = new Date().getUTCFullYear() - 1) 
   if (end > latestYear) throw new Error(`Use complete calendar years through ${latestYear}.`)
   if (end - start + 1 < 5) throw new Error('Choose at least five years for the trend test.')
 
-  return { claim: input, city: matchedCities[0], metric, start, end, direction: goesUp ? 1 : goesDown ? -1 : 0 }
+  return {
+    claim: input,
+    city: selectedCity,
+    needsGeocode,
+    searchQuery: candidateCity,
+    metric,
+    start,
+    end,
+    direction: goesUp ? 1 : goesDown ? -1 : 0,
+  }
 }

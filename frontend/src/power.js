@@ -43,7 +43,12 @@ export async function analyzeClaim(parsed, signal) {
   try {
     const requestSignal = AbortSignal.any([signal, AbortSignal.timeout(11000)])
     const apiUrl = backend ? `${backend}/api/analyze?${new URLSearchParams({
-      city: parsed.city.id, metric: parsed.metric, start: parsed.start, end: parsed.end,
+      city: parsed.city.id,
+      metric: parsed.metric,
+      start: parsed.start,
+      end: parsed.end,
+      lat: parsed.city.lat.toFixed(2),
+      lon: parsed.city.lon.toFixed(2),
     })}` : url
     const response = await fetch(apiUrl, { signal: requestSignal })
     if (!response.ok) {
