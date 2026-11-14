@@ -11,9 +11,11 @@ import TrendChart from './components/TrendChart'
 import VerdictCard, { signed } from './components/VerdictCard'
 import StatsPanel from './components/StatsPanel'
 import ReportCard from './components/ReportCard'
+import HeroGlobe, { claimForCity, nearestCity } from './components/HeroGlobe'
 
 const challenge = 'https://www.spaceappschallenge.org/2026/challenges/earth-system-trend-detective/'
 const imageCredit = 'https://science.nasa.gov/earth/earth-observatory/the-blue-marble-true-color-global-imagery-at-1km-resolution/'
+const globeCredits = `${import.meta.env.BASE_URL}globe/credits.txt`
 
 function Brand() {
   return (
@@ -111,6 +113,8 @@ export default function App() {
   const [reportProgress, setReportProgress] = useState(null)
   const [pendingClaim, setPendingClaim] = useState('')
   const [error, setError] = useState(null)
+  const [globeSelection, setGlobeSelection] = useState(null)
+  const [clickedPoint, setClickedPoint] = useState(null)
   const root = useRef(null)
   const activeRequest = useRef(null)
   const methodDialog = useRef(null)
@@ -134,9 +138,29 @@ export default function App() {
     }
   }, [])
 
+  useEffect(() => {
+    if (!clickedPoint) return undefined
+    const timeout = setTimeout(() => setClickedPoint(null), 2200)
+    return () => clearTimeout(timeout)
+  }, [clickedPoint])
+
   function updateClaim(value) {
     setClaim(value)
     setError(null)
+  }
+
+  function selectGlobeCity(city, source) {
+    if (!city) return
+    setGlobeSelection(previous => ({ city, source, key: (previous?.key ?? 0) + 1 }))
+  }
+
+  function selectGlobeLocation(location) {
+    const city = nearestCity(location)
+    if (!city) return
+    setClickedPoint(location)
+    setClaim(previous => claimForCity(previous, city))
+    setError(null)
+    selectGlobeCity(city, 'globe')
   }
 
   async function runReportCard(rawInput) {
@@ -152,6 +176,9 @@ export default function App() {
       return
     }
 
+    setClickedPoint(null)
+    if (rc.city) selectGlobeCity(rc.city, 'claim')
+
     activeRequest.current?.abort()
     const controller = new AbortController()
     activeRequest.current = controller
@@ -166,6 +193,7 @@ export default function App() {
       if (rc.needsGeocode) {
         city = await geocodeCity(rc.searchQuery, controller.signal)
         if (controller.signal.aborted) return
+        selectGlobeCity(city, 'claim')
       }
 
       setPendingClaim(`Analyzing all 7 climate metrics for ${city.name}...`)
@@ -216,6 +244,9 @@ export default function App() {
       return
     }
 
+    setClickedPoint(null)
+    if (parsed.city) selectGlobeCity(parsed.city, 'claim')
+
     activeRequest.current?.abort()
     const controller = new AbortController()
     activeRequest.current = controller
@@ -230,6 +261,7 @@ export default function App() {
         const geoCity = await geocodeCity(parsed.searchQuery, controller.signal)
         if (controller.signal.aborted) return
         parsed.city = geoCity
+        selectGlobeCity(geoCity, 'claim')
         setPendingClaim(parsed.claim)
       }
       const verified = await analyzeClaim(parsed, controller.signal)
@@ -266,29 +298,27 @@ export default function App() {
 
       <main>
         <section id="explore" className="hero">
-          <div className="hero-art" aria-hidden="true">
-            <div className="art-stars" />
-            <div className="orbit orbit-outer" />
-            <div className="orbit orbit-inner" />
-            <img src={`${import.meta.env.BASE_URL}earth.webp`} alt="" width="920" height="920" fetchPriority="high" />
-          </div>
+          <div className="art-stars" aria-hidden="true" />
           <div className="page-shell hero-inner">
-            <div className="hero-pills">
-              <a href={POWER_DOCS} className="data-pill" target="_blank" rel="noreferrer"><Satellite size={14} aria-hidden="true" /> Powered by NASA POWER</a>
-              <span className="earth-pill">🌍 Works for any city on Earth</span>
+            <div className="hero-content">
+              <div className="hero-pills">
+                <a href={POWER_DOCS} className="data-pill" target="_blank" rel="noreferrer"><Satellite size={14} aria-hidden="true" /> Powered by NASA POWER</a>
+                <span className="earth-pill">🌍 Works for any city on Earth</span>
+              </div>
+              <h1>Put climate claims<br className="hero-break" /> to the test.</h1>
+              <p className="hero-copy">Enter a claim about any city worldwide to explore the trend in NASA data and see how strong the evidence is.</p>
+              <SearchBar
+                value={claim}
+                onChange={updateClaim}
+                onSubmit={verify}
+                onExample={value => verify(value, true)}
+                onReportCard={runReportCard}
+                busy={Boolean(pendingClaim)}
+                invalid={error?.input}
+              />
+              {error && <div className="claim-error" id="claim-error" role="alert"><CircleAlert size={17} /> {error.message}</div>}
             </div>
-            <h1>Put climate claims<br className="hero-break" /> to the test.</h1>
-            <p className="hero-copy">Enter a claim about any city worldwide to explore the trend in NASA data and see how strong the evidence is.</p>
-            <SearchBar
-              value={claim}
-              onChange={updateClaim}
-              onSubmit={verify}
-              onExample={value => verify(value, true)}
-              onReportCard={runReportCard}
-              busy={Boolean(pendingClaim)}
-              invalid={error?.input}
-            />
-            {error && <div className="claim-error" id="claim-error" role="alert"><CircleAlert size={17} /> {error.message}</div>}
+            <HeroGlobe selection={globeSelection} clickedPoint={clickedPoint} onLocationSelect={selectGlobeLocation} />
           </div>
         </section>
 
@@ -328,7 +358,7 @@ export default function App() {
 
       <footer className="page-shell site-footer">
         <span>TrendProof · NASA Space Apps Challenge 2026</span>
-        <div><a href={imageCredit} target="_blank" rel="noreferrer">Earth image credit</a><button type="button" onClick={openMethodology}>Methodology</button></div>
+        <div><a href={imageCredit} target="_blank" rel="noreferrer">Earth image credit</a><a href={globeCredits} target="_blank" rel="noreferrer">Globe data credits</a><button type="button" onClick={openMethodology}>Methodology</button></div>
       </footer>
       <Methodology dialog={methodDialog} />
     </>

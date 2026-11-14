@@ -1,0 +1,21 @@
+TrendProof globe asset credits
+
+Earth daylight: NASA Earth Observatory, Blue Marble: Next Generation with Topography, January 2004. Produced by Reto Stöckli (NASA Goddard Space Flight Center). The global MODIS image was resized from 5400 × 2700 to 4096 × 2048 and encoded as WebP.
+https://science.nasa.gov/earth/earth-observatory/blue-marble-next-generation/base-topography/
+
+Earth night: NASA Earth Observatory, 2016 Black Marble by Joshua Stevens, using Suomi NPP VIIRS data from Miguel Román (NASA Goddard Space Flight Center). The global color composite was resized to 2048 × 1024 and encoded as WebP.
+https://science.nasa.gov/earth/earth-observatory/earth-at-night/maps/
+
+Clouds: NASA Goddard Space Flight Center, Blue Marble: Clouds by Reto Stöckli with enhancements by Robert Simmon. The historical composite was converted into a transparent display layer from the cloud brightness data. Intermediary: MaxwellLee/physics-lab (assets/textures/clouds_2048.png).
+https://science.nasa.gov/earth/earth-observatory/the-blue-marble-true-color-global-imagery-at-1km-resolution/
+https://github.com/MaxwellLee/physics-lab/blob/main/assets/textures/SOURCES.md
+
+Terrain: NASA Earth Observatory, Blue Marble: Next Generation global topography. The display height map was resized to 2048 × 1024 and encoded as grayscale WebP.
+https://science.nasa.gov/earth/earth-observatory/blue-marble-next-generation/topography-bathymetry-maps/
+
+Land boundaries: Made with Natural Earth (Admin 0 boundary lines at 1:110m). These generalized de facto boundaries are provided as public-domain data. The original coordinates were rounded to four decimal places and converted to an array of paths.
+https://www.naturalearthdata.com/downloads/110m-cultural-vectors/110m-admin-0-boundary-lines/
+https://www.naturalearthdata.com/about/terms-of-use/
+
+These images use archival composites for visualization. NASA media usage guidance:
+https://www.nasa.gov/nasa-brand-center/images-and-media/
