@@ -10,10 +10,17 @@ import json
 import difflib
 
 # Load catalog shared with frontend if available
-_catalog_path = Path(__file__).resolve().parents[1] / "frontend" / "src" / "catalog.json"
-if _catalog_path.is_file():
+_local_catalog = Path(__file__).resolve().parent / "catalog.json"
+_frontend_catalog = Path(__file__).resolve().parents[1] / "frontend" / "src" / "catalog.json"
+
+if _local_catalog.is_file():
     try:
-        CATALOG = json.loads(_catalog_path.read_text(encoding="utf-8"))
+        CATALOG = json.loads(_local_catalog.read_text(encoding="utf-8"))
+    except Exception:
+        CATALOG = {"cities": [], "metrics": {}}
+elif _frontend_catalog.is_file():
+    try:
+        CATALOG = json.loads(_frontend_catalog.read_text(encoding="utf-8"))
     except Exception:
         CATALOG = {"cities": [], "metrics": {}}
 else:
