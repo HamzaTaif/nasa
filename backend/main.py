@@ -26,7 +26,8 @@ try:
     from .cities import find_city, search_cities, get_pakistan_cities, CITIES, METRICS
     from .nasa_power import (
         get_climate_data, resolve_variable, get_parameter_info,
-        fetch_climatology, fetch_monthly, PARAMETER_INFO, VARIABLE_MAPPING,
+        fetch_climatology, fetch_monthly, fetch_nasa_apod, NASA_API_KEY,
+        PARAMETER_INFO, VARIABLE_MAPPING,
     )
     from .parser import parse_claim
     from .analysis import analyze_trend, compare_cities, annual_series, analyze_series
@@ -34,7 +35,8 @@ except ImportError:
     from cities import find_city, search_cities, get_pakistan_cities, CITIES, METRICS
     from nasa_power import (
         get_climate_data, resolve_variable, get_parameter_info,
-        fetch_climatology, fetch_monthly, PARAMETER_INFO, VARIABLE_MAPPING,
+        fetch_climatology, fetch_monthly, fetch_nasa_apod, NASA_API_KEY,
+        PARAMETER_INFO, VARIABLE_MAPPING,
     )
     from parser import parse_claim
     from analysis import analyze_trend, compare_cities, annual_series, analyze_series
@@ -141,6 +143,22 @@ async def analyze(request: Request, city: str, metric: str, start: int, end: int
         return analyze_series(annual_series(values, fill, metric, start, end))
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.get("/api/nasa/apod")
+async def nasa_apod(request: Request):
+    """Fetch NASA Astronomy Picture of the Day from api.nasa.gov using configured API key."""
+    client = getattr(request.app.state, "nasa_client", None)
+    if client:
+        data = await fetch_nasa_apod(client)
+        if data:
+            return data
+    async with httpx.AsyncClient(timeout=10.0) as temp_client:
+        data = await fetch_nasa_apod(temp_client)
+        if data:
+            return data
+    raise HTTPException(status_code=502, detail="NASA APOD API currently unavailable.")
+
 
 
 

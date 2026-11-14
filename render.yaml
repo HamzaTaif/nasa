@@ -9,3 +9,5 @@ services:
         value: 3.12.0
       - key: TRENDPROOF_ORIGINS
         value: "*"
+      - key: NASA_API_KEY
+        value: W9nnn7jzrhTBrBrBQGDWch6KMGQQPMLWFgcqHBnn

@@ -4,12 +4,14 @@ Fetches climate data (temperature, rainfall, humidity, etc.) for any location on
 Data available from 1981 to near real-time.
 """
 
+import os
 import requests
 import httpx
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 from datetime import datetime
 
+NASA_API_KEY = os.getenv("NASA_API_KEY", "W9nnn7jzrhTBrBrBQGDWch6KMGQQPMLWFgcqHBnn")
 BASE_URL = "https://power.larc.nasa.gov/api/temporal"
 
 # Parameter descriptions for user-facing output
@@ -378,8 +380,10 @@ POWER_MONTHLY_URL = "https://power.larc.nasa.gov/api/temporal/monthly/point"
 
 async def fetch_monthly(client, city, metric, start, end):
     """Fetch monthly point records from NASA POWER using httpx client."""
+    headers = {"X-Api-Key": NASA_API_KEY} if NASA_API_KEY else {}
     response = await client.get(
         POWER_MONTHLY_URL,
+        headers=headers,
         params={
             "parameters": metric,
             "community": "RE",
@@ -399,4 +403,17 @@ async def fetch_monthly(client, city, metric, start, end):
     except (KeyError, TypeError, ValueError) as exc:
         raise httpx.DecodingError("Invalid NASA POWER response") from exc
     return values, payload.get("header", {}).get("fill_value", -999)
+
+
+async def fetch_nasa_apod(client: httpx.AsyncClient):
+    """Fetch Astronomy / Earth Image of the Day from api.nasa.gov using configured API key."""
+    url = "https://api.nasa.gov/planetary/apod"
+    try:
+        response = await client.get(url, params={"api_key": NASA_API_KEY})
+        if response.status_code == 200:
+            return response.json()
+    except Exception:
+        pass
+    return None
+
 
