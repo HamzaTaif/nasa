@@ -1,0 +1,14 @@
+{
+  "name": "trendproof",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "frontend"
+  ],
+  "scripts": {
+    "dev": "vite frontend",
+    "build": "npm run build --workspace frontend",
+    "preview": "vite preview frontend"
+  }
+}
