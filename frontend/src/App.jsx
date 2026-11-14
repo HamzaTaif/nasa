@@ -2,13 +2,15 @@ import { useEffect, useRef, useState } from 'react'
 import {
   ArrowUpRight, CalendarDays, CircleAlert, Database, Download, Globe2, LoaderCircle, MapPin, Satellite, X,
 } from 'lucide-react'
-import { cities, examples, metrics, parseClaim } from './claims'
+import { cities, examples, metrics, parseClaim, parseReportCard } from './claims'
 import { analyzeClaim, POWER_DOCS, readSnapshot } from './power'
 import { geocodeCity } from './geocode'
+import { generateReportCard } from './reportcard'
 import SearchBar from './components/SearchBar'
 import TrendChart from './components/TrendChart'
 import VerdictCard, { signed } from './components/VerdictCard'
 import StatsPanel from './components/StatsPanel'
+import ReportCard from './components/ReportCard'
 
 const challenge = 'https://www.spaceappschallenge.org/2026/challenges/earth-system-trend-detective/'
 const imageCredit = 'https://science.nasa.gov/earth/earth-observatory/the-blue-marble-true-color-global-imagery-at-1km-resolution/'
@@ -105,6 +107,8 @@ function Investigation({ result, onMethodology }) {
 export default function App() {
   const [claim, setClaim] = useState('')
   const [result, setResult] = useState(null)
+  const [reportCard, setReportCard] = useState(null)
+  const [reportProgress, setReportProgress] = useState(null)
   const [pendingClaim, setPendingClaim] = useState('')
   const [error, setError] = useState(null)
   const root = useRef(null)
@@ -135,8 +139,75 @@ export default function App() {
     setError(null)
   }
 
+  async function runReportCard(rawInput) {
+    const text = (typeof rawInput === 'string' ? rawInput : claim).trim()
+    if (!text) {
+      setError({ message: 'Enter a city name to see its full climate report card.', input: true })
+      return
+    }
+
+    const rc = parseReportCard(text)
+    if (!rc) {
+      setError({ message: `Could not identify a city from "${text}". Try entering a city name like "Peshawar" or "Berlin".`, input: true })
+      return
+    }
+
+    activeRequest.current?.abort()
+    const controller = new AbortController()
+    activeRequest.current = controller
+    setPendingClaim(`Locating ${rc.searchQuery || rc.city?.name}...`)
+    setError(null)
+    setResult(null)
+    setReportCard(null)
+    setReportProgress({ done: 0, total: 7 })
+
+    try {
+      let city = rc.city
+      if (rc.needsGeocode) {
+        city = await geocodeCity(rc.searchQuery, controller.signal)
+        if (controller.signal.aborted) return
+      }
+
+      setPendingClaim(`Analyzing all 7 climate metrics for ${city.name}...`)
+      const card = await generateReportCard(
+        city,
+        rc.start,
+        rc.end,
+        controller.signal,
+        (done, total) => {
+          if (!controller.signal.aborted) {
+            setReportProgress({ done, total })
+          }
+        }
+      )
+      if (controller.signal.aborted) return
+      setReportCard(card)
+      setReportProgress(null)
+      if (window.matchMedia('(max-width: 780px)').matches) {
+        requestAnimationFrame(() => root.current?.scrollIntoView({
+          behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth',
+          block: 'start',
+        }))
+      }
+    } catch (issue) {
+      if (!controller.signal.aborted) setError({ message: issue.message, input: false })
+    } finally {
+      if (!controller.signal.aborted) {
+        setPendingClaim('')
+        setReportProgress(null)
+      }
+    }
+  }
+
   async function verify(value, fromExample = false) {
     if (fromExample) setClaim(value)
+
+    // Check if the user entered a report card request or bare city name
+    const rc = parseReportCard(value)
+    if (rc && !fromExample) {
+      return runReportCard(value)
+    }
+
     let parsed
     try {
       parsed = parseClaim(value)
@@ -150,6 +221,8 @@ export default function App() {
     activeRequest.current = controller
     setPendingClaim(parsed.claim)
     setError(null)
+    setReportCard(null)
+    setReportProgress(null)
 
     try {
       if (parsed.needsGeocode) {
@@ -206,16 +279,50 @@ export default function App() {
             </div>
             <h1>Put climate claims<br className="hero-break" /> to the test.</h1>
             <p className="hero-copy">Enter a claim about any city worldwide to explore the trend in NASA data and see how strong the evidence is.</p>
-            <SearchBar value={claim} onChange={updateClaim} onSubmit={verify} onExample={value => verify(value, true)} busy={Boolean(pendingClaim)} invalid={error?.input} />
+            <SearchBar
+              value={claim}
+              onChange={updateClaim}
+              onSubmit={verify}
+              onExample={value => verify(value, true)}
+              onReportCard={runReportCard}
+              busy={Boolean(pendingClaim)}
+              invalid={error?.input}
+            />
             {error && <div className="claim-error" id="claim-error" role="alert"><CircleAlert size={17} /> {error.message}</div>}
           </div>
         </section>
 
         <section className="page-shell investigation" aria-label="Investigation results" ref={root} aria-busy={Boolean(pendingClaim)}>
-          <span className="sr-only" role="status">{pendingClaim ? `Checking ${pendingClaim}` : result ? `Analysis ready. ${result.city.name}, ${result.start} to ${result.end}.` : ''}</span>
-          {pendingClaim
-            ? <div className="panel loading-panel"><LoaderCircle size={26} className="spin" /><h2>Checking the claim</h2><p>“{pendingClaim}”</p></div>
-            : result && <Investigation result={result} onMethodology={openMethodology} />}
+          <span className="sr-only" role="status">
+            {pendingClaim
+              ? `Checking ${pendingClaim}`
+              : reportCard
+              ? `Report card ready for ${reportCard.city.name}.`
+              : result
+              ? `Analysis ready. ${result.city.name}, ${result.start} to ${result.end}.`
+              : ''}
+          </span>
+          {pendingClaim ? (
+            <div className="panel loading-panel">
+              <LoaderCircle size={26} className="spin" />
+              <h2>{reportProgress ? 'Building Climate Report Card' : 'Checking the claim'}</h2>
+              <p>“{pendingClaim}”</p>
+              {reportProgress && (
+                <>
+                  <div className="rc-loading-bar" style={{ marginTop: '14px' }}>
+                    <div className="rc-loading-fill" style={{ width: `${(reportProgress.done / reportProgress.total) * 100}%` }} />
+                  </div>
+                  <p style={{ fontSize: '12px', marginTop: '6px', color: 'var(--subtle)' }}>
+                    Analyzed {reportProgress.done} of {reportProgress.total} NASA metrics
+                  </p>
+                </>
+              )}
+            </div>
+          ) : reportCard ? (
+            <ReportCard data={reportCard} />
+          ) : (
+            result && <Investigation result={result} onMethodology={openMethodology} />
+          )}
         </section>
       </main>
 

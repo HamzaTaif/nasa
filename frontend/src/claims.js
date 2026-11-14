@@ -61,6 +61,58 @@ export function extractCityCandidate(claim) {
   return stripped.length >= 2 ? stripped : null
 }
 
+/**
+ * Detect "report card for X" or bare city name (no metric keywords).
+ */
+export function parseReportCard(claim, latestYear = new Date().getUTCFullYear() - 1) {
+  const input = claim.trim().replace(/\s+/g, ' ')
+
+  // Explicit patterns: "report card for X", "X report card", "full report X", "report X", "X climate report"
+  const rcMatch = input.match(
+    /^(?:(?:full\s+)?report\s+(?:card\s+)?(?:for|of|on)\s+(.+)|(.+?)\s+(?:climate\s+)?report\s*card?|(?:full\s+)?report\s+(.+))$/i
+  )
+  let cityName = null
+  if (rcMatch) {
+    cityName = (rcMatch[1] ?? rcMatch[2] ?? rcMatch[3]).trim()
+  } else {
+    // Bare city name: no metric keywords and no direction keywords
+    const hasMetric = rules.some(([, pattern]) => pattern.test(input))
+    const hasDirection = upward.test(input) || downward.test(input) || explore.test(input)
+    if (!hasMetric && !hasDirection && !unsupported.test(input) && input.length >= 2 && input.length <= 80) {
+      cityName = input
+    }
+  }
+
+  if (!cityName) return null
+
+  // Try catalog match
+  const matchedCities = cities.filter(city => [city.name, ...(city.aliases ?? [])].some(name =>
+    new RegExp(`(?:^|[^a-z])${name}(?:[^a-z]|$)`, 'i').test(cityName)
+  ))
+
+  let selectedCity = null
+  let needsGeocode = false
+  let searchQuery = cityName
+
+  if (matchedCities.length === 1) {
+    selectedCity = matchedCities[0]
+  } else if (matchedCities.length > 1) {
+    const sorted = [...matchedCities].sort((a, b) => b.name.length - a.name.length)
+    selectedCity = sorted[0]
+  } else {
+    needsGeocode = true
+  }
+
+  // Parse optional year range
+  const years = [...cityName.matchAll(/(?<!\d)(\d{4})(?!\d)/g)].map(m => Number(m[1]))
+  let start = 2001
+  let end = latestYear
+  if (years.length === 2) { start = years[0]; end = years[1] }
+  else if (years.length === 1) { start = years[0] }
+
+  return { isReportCard: true, city: selectedCity, needsGeocode, searchQuery, start, end }
+}
+
 export function parseClaim(claim, latestYear = new Date().getUTCFullYear() - 1) {
   const input = claim.trim().replace(/\s+/g, ' ')
   if (unsupported.test(input) || /\b(?:by|than|above|below|over|under)\s*[+-]?\d+(?:\.\d+)?\s*(?:°|%|mm\b|degrees?\b)/i.test(input)) {

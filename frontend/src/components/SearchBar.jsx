@@ -3,7 +3,7 @@ import { examples } from '../claims'
 
 const icons = { T2M: Thermometer, PRECTOTCORR: Droplets, RH2M: Waves }
 
-export default function SearchBar({ value, onChange, onSubmit, onExample, busy, invalid }) {
+export default function SearchBar({ value, onChange, onSubmit, onExample, onReportCard, busy, invalid }) {
   return (
     <div className="claim-control">
       <form className="claim-form" onSubmit={event => {
@@ -38,6 +38,9 @@ export default function SearchBar({ value, onChange, onSubmit, onExample, busy, 
             </button>
           )
         })}
+        <button className="rc-btn" type="button" disabled={busy || !value.trim()} onClick={() => onReportCard(value)}>
+          📋 Full Report Card
+        </button>
       </div>
     </div>
   )
