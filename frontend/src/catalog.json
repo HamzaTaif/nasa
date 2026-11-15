@@ -16,6 +16,7 @@
     {"id":"london","name":"London","country":"United Kingdom","lat":51.51,"lon":-0.13},
     {"id":"new-york","name":"New York","country":"United States","lat":40.71,"lon":-74.01,"aliases":["NYC","New York City"]},
     {"id":"dubai","name":"Dubai","country":"United Arab Emirates","lat":25.2,"lon":55.27},
+    {"id":"jakarta","name":"Jakarta","country":"Indonesia","lat":-6.21,"lon":106.85},
     {"id":"tokyo","name":"Tokyo","country":"Japan","lat":35.68,"lon":139.69},
     {"id":"sydney","name":"Sydney","country":"Australia","lat":-33.87,"lon":151.21},
     {"id":"cairo","name":"Cairo","country":"Egypt","lat":30.04,"lon":31.24},

@@ -1,0 +1,11 @@
+GeoNames populated-place lookup data
+
+Source: GeoNames (https://www.geonames.org/), GeoNames Gazetteer export
+https://download.geonames.org/export/dump/cities500.zip
+https://download.geonames.org/export/dump/admin1CodesASCII.txt
+Source snapshot: 2026-11-14
+
+Licensed under Creative Commons Attribution 4.0 International:
+https://creativecommons.org/licenses/by/4.0/
+
+TrendProof adapted the source data by filtering to current populated-place records, selecting locality and region fields, indexing accent-insensitive names and selected alternate names, and compressing them into lookup shards. Source coordinates and population values originate from GeoNames.

@@ -1,21 +1,22 @@
-TrendProof globe asset credits
+TrendProof globe imagery and boundaries
 
-Earth daylight: NASA Earth Observatory, Blue Marble: Next Generation with Topography, January 2004. Produced by Reto Stöckli (NASA Goddard Space Flight Center). The global MODIS image was resized from 5400 × 2700 to 4096 × 2048 and encoded as WebP.
-https://science.nasa.gov/earth/earth-observatory/blue-marble-next-generation/base-topography/
+Daytime Earth, nighttime Earth, and terrain relief are the 4K Blue Marble, 4K night, and 2K topography assets distributed with Vasturiano’s three-globe examples. NASA Earth Observatory is credited for the Blue Marble imagery.
+https://github.com/vasturiano/three-globe/tree/master/example/img
+https://science.nasa.gov/earth/earth-observatory/blue-marble-next-generation/
 
-Earth night: NASA Earth Observatory, 2016 Black Marble by Joshua Stevens, using Suomi NPP VIIRS data from Miguel Román (NASA Goddard Space Flight Center). The global color composite was resized to 2048 × 1024 and encoded as WebP.
-https://science.nasa.gov/earth/earth-observatory/earth-at-night/maps/
+Cloud layer: Tom Patterson’s Natural Earth III fair-weather clouds, in the transparent PNG prepared by Bjørn Sandvik for his WebGL Earth experiment. The globe.gl cloud example distributes that same PNG. Natural Earth III imagery is in the public domain.
+https://www.shadedrelief.com/natural3/pages/clouds.html
+https://www.shadedrelief.com/natural3/pages/use.html
+https://github.com/turban/webgl-earth
+https://github.com/vasturiano/globe.gl/tree/master/example/clouds
 
-Clouds: NASA Goddard Space Flight Center, Blue Marble: Clouds by Reto Stöckli with enhancements by Robert Simmon. The historical composite was converted into a transparent display layer from the cloud brightness data. Intermediary: MaxwellLee/physics-lab (assets/textures/clouds_2048.png).
-https://science.nasa.gov/earth/earth-observatory/the-blue-marble-true-color-global-imagery-at-1km-resolution/
-https://github.com/MaxwellLee/physics-lab/blob/main/assets/textures/SOURCES.md
-
-Terrain: NASA Earth Observatory, Blue Marble: Next Generation global topography. The display height map was resized to 2048 × 1024 and encoded as grayscale WebP.
-https://science.nasa.gov/earth/earth-observatory/blue-marble-next-generation/topography-bathymetry-maps/
-
-Land boundaries: Made with Natural Earth (Admin 0 boundary lines at 1:110m). These generalized de facto boundaries are provided as public-domain data. The original coordinates were rounded to four decimal places and converted to an array of paths.
-https://www.naturalearthdata.com/downloads/110m-cultural-vectors/110m-admin-0-boundary-lines/
+Country shapes: Made with Natural Earth. The 1:110 million-scale Admin 0 polygons come from the react-globe.gl example dataset, are generalized for visualization, and follow Natural Earth’s de facto boundaries. Their names and country codes help match city searches to shapes. Natural Earth vector data is in the public domain.
+https://raw.githubusercontent.com/vasturiano/react-globe.gl/master/example/datasets/ne_110m_admin_0_countries.geojson
+https://www.naturalearthdata.com/downloads/110m-cultural-vectors/110m-admin-0-countries/
 https://www.naturalearthdata.com/about/terms-of-use/
 
-These images use archival composites for visualization. NASA media usage guidance:
+The static Earth image is NASA Earth Observatory’s Blue Marble Eastern Hemisphere. Image by Reto Stöckli, with enhancements by Robert Simmon at NASA Goddard Space Flight Center.
+https://science.nasa.gov/earth/earth-observatory/the-blue-marble-true-color-global-imagery-at-1km-resolution/
 https://www.nasa.gov/nasa-brand-center/images-and-media/
+
+The globe combines archival imagery with simulated lighting and cloud motion.

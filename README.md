@@ -1,147 +1,73 @@
-# TrendProof — Climate Claim Verification with NASA Data
+# TrendProof
 
-> **NASA Space Apps Challenge 2026** — *Be An Earth System Trend Detective!*  
-> Challenge details: [NASA Space Apps Challenge](https://www.spaceappschallenge.org/2026/challenges/earth-system-trend-detective/)
+TrendProof tests local climate claims against NASA POWER for the 2026 NASA Space Apps Challenge, [Be An Earth System Trend Detective!](https://www.spaceappschallenge.org/2026/challenges/earth-system-trend-detective/).
 
----
+## Run locally
 
-## Overview
+Requires Node.js 20.19+ or 22.12+ and npm. No NASA API key is needed.
 
-**TrendProof** is a climate verification engine that tests natural language climate statements against decades of satellite-derived observations from **NASA POWER** (Prediction of Worldwide Energy Resources).
+```bash
+npm ci
+npm run dev
+```
 
-Instead of subjective verdicts or simple binary answers, TrendProof applies rigorous statistical hypothesis testing (Ordinary Least Squares regression, two-tailed Student's t-test, 95% confidence intervals, and residual outlier detection) to determine whether real-world Earth observation data confirms, partially supports, or contradicts a claim.
+Open the URL printed by Vite. For a production build, run `npm run build`. `npm run preview` serves `dist/client/`, which also works on a static host with the bundled city index. The hosted application additionally runs the geocoding gateway in `dist/server/`.
 
----
+## Try the demo
 
-## Key Features
+- Peshawar is getting hotter
+- Rainfall in Lahore is decreasing
+- Karachi is getting more humid
+- Riyadh is getting hotter
+- Moscow temperature trend
+- São Paulo humidity is increasing
+- Jakarta is getting hotter
+- Show the annual rainfall trend in Islamabad from 1990 to 2020
+- Daily highs in London are increasing since 1990
 
-- **Natural Language Parsing**: Accepts everyday phrases such as *"Peshawar is getting hotter"* or *"Rainfall in Lahore is decreasing since 2000"*, automatically detecting city coordinates, target climate parameters, and time horizons.
-- **NASA POWER Satellite & Reanalysis Data**: Direct access to monthly meteorological metrics derived from **NASA MERRA-2** assimilation models covering 1981 through the latest complete year.
-- **Statistically Rigorous Verdicts**:
-  - **Confirmed**: Trend direction matches the claim with $p < 0.05$.
-  - **Partially True**: Direction aligns, but sample variance or effect size yields inconclusive statistical significance.
-  - **Not Supported**: Data demonstrates a flat slope or trend in the opposite direction.
-- **Anomaly Detection**: Flags years where residuals exceed twice the residual standard error ($> 2\sigma$).
-- **Offline / Resilient Fallbacks**: Pre-cached satellite snapshots ensure zero-downtime demonstrations for key metropolitan centers even if external APIs experience transient rate limits.
-- **Data Export**: One-click CSV download of annual time series, linear trend lines, and outlier classifications.
+Use one city and metric per claim. The Methodology dialog lists the available metrics. For cities with shared names, add a country or region after a comma, such as “Paris, Texas”. The rules extract the variable, direction, and year range locally. The NASA POWER request contains city coordinates, a parameter, and the years. Built-in cities resolve directly. Other cities use a bundled [GeoNames](https://www.geonames.org/) index covering more than 226,000 populated places. Only the needed lookup shard is downloaded. TrendProof supports annual trends over at least five complete years.
 
----
+## Data and statistics
 
-## Architecture
+- [NASA POWER Monthly API](https://power.larc.nasa.gov/docs/services/api/temporal/monthly/) provides model-grid point values. Meteorological parameters come from [NASA MERRA-2](https://power.larc.nasa.gov/docs/methodology/data/sources_meteorology/).
+- TrendProof drops years with missing months and ignores NASA's annual summary field. It weights monthly means by the days in each month. For corrected precipitation, it converts each monthly daily rate to a monthly total and sums precipitation in millimeters per year.
+- Ordinary least squares fits the annual values. A two-sided Student t-test tests the zero-slope hypothesis at p < 0.05. The chart marks years whose residual exceeds twice the residual standard error. The inference assumes independent residuals and constant error variance. Serial correlation can affect the reported significance. Causal attribution requires a separate study.
+- The opening example uses a saved NASA POWER response. Submitted claims request NASA POWER live. If that request fails, bundled responses can cover 1984–2025 for Peshawar, Lahore, Karachi, Islamabad, and Jakarta. Saved results show their retrieval date and link to the original request.
+- The Earth image is NASA Goddard's [Blue Marble (2002), Eastern Hemisphere](https://science.nasa.gov/earth/earth-observatory/the-blue-marble-true-color-global-imagery-at-1km-resolution/), by Reto Stöckli with enhancements by Robert Simmon. Geist and Instrument Sans include their font licenses.
+
+## Optional FastAPI + SciPy backend
+
+The default frontend can run on its own. To run trend calculations in Python, create an environment with Python 3.11 or newer and run the following from the project root.
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r backend/requirements.txt
+uvicorn backend.main:app --port 8000
+```
+
+In another terminal, run:
+
+```bash
+VITE_BACKEND_URL=http://127.0.0.1:8000 npm run dev
+```
+
+Set `TRENDPROOF_ORIGINS` to a comma-separated list if your frontend runs on a different origin. The endpoint takes a city ID, NASA POWER metric, and complete year range.
 
 ```text
-[ User Natural Language Claim ]
-              │
-              ▼
-   ┌──────────────────────┐
-   │ Claim Parser (NLP)   │ ── Extracts city, metric, direction, & range
-   └──────────────────────┘
-              │
-              ▼
-   ┌──────────────────────┐
-   │ NASA POWER Client    │ ── Fetches monthly satellite observations
-   └──────────────────────┘    (Fallback to local snapshots if offline)
-              │
-              ▼
-   ┌──────────────────────┐
-   │ Statistical Engine   │ ── OLS regression, t-test, confidence intervals
-   └──────────────────────┘    (Browser JS jStat or FastAPI SciPy backend)
-              │
-              ▼
-┌────────────────────────────┐
-│ Interactive Visualization  │ ── Verdict card, trend chart & CSV export
-└────────────────────────────┘
+GET /api/analyze?city=peshawar&metric=T2M&start=2001&end=2025
 ```
 
----
+## Interactive Earth globe
 
-## Supported Climate Metrics
+Drag the globe to rotate it, or use the arrow keys while it is focused. Click or tap a point, or press Enter or Space to select the center. TrendProof fills the claim with the nearest city in its catalog. Submit a valid claim to fly to that city's coordinates and highlight its country. The globe resumes idle rotation after five seconds of inactivity. Use **Clear highlight** to reset the selection.
 
-| Parameter | Name | Units | Source | Available From |
-| :--- | :--- | :--- | :--- | :--- |
-| `T2M` | Mean Surface Temperature | °C | MERRA-2 | 1981 |
-| `T2M_MAX_AVG` | Mean Daily High Temperature | °C | MERRA-2 | 1981 |
-| `T2M_MIN_AVG` | Mean Daily Low Temperature | °C | MERRA-2 | 1981 |
-| `PRECTOTCORR` | Annual Corrected Precipitation | mm | MERRA-2 | 1981 |
-| `RH2M` | Relative Humidity | % | MERRA-2 | 1981 |
-| `ALLSKY_SFC_SW_DWN` | Solar Irradiance | kWh/m²/day | Satellite | 1984 |
-| `WS2M` | Wind Speed | m/s | MERRA-2 | 1981 |
+The hero loads the globe on demand. It uses WebGL when available and has an interactive Canvas fallback. A static Earth image is displayed on phones and if interactive rendering fails. The interactive globe downloads the imagery from UNPKG and respects reduced-motion settings. NASA imagery is archival. The globe's lighting is set for the visualization. [Image and boundary credits](frontend/public/globe/credits.txt).
 
----
+## Worldwide city lookup
 
-## Quickstart (Local Development)
+The hosted `/api/geocode` gateway identifies itself to Nominatim as `TrendProof/1.0`, caches matches, and limits upstream requests across users. The browser sends only the extracted city name on submission. If the gateway is unavailable or has no match, the app searches the bundled GeoNames index. Set the gateway's `TRENDPROOF_NOMINATIM_UPSTREAM` environment variable to switch providers, or to `off` to disable upstream lookups.
 
-### 1. Frontend (Standalone)
+For local use with Nominatim, the optional FastAPI server includes `GET /api/geocode?q=...` as a single-process gateway. Give that server `TRENDPROOF_NOMINATIM_UPSTREAM` and `TRENDPROOF_GEOCODER_CONTACT`, and set `VITE_NOMINATIM_URL` to the gateway's URL. Follow the [Nominatim usage policy](https://operations.osmfoundation.org/policies/nominatim/) when using the public OpenStreetMap endpoint.
 
-The React client can run entirely standalone by contacting NASA POWER directly from the browser:
-
-```bash
-# Install workspace dependencies
-npm install
-
-# Start Vite dev server
-npm run dev
-
-# Build production bundle to dist/
-npm run build
-
-# Preview production build
-npm run preview
-```
-
-### 2. Full-Stack Mode (FastAPI + SciPy Backend)
-
-To enable server-side Python statistical analysis:
-
-```bash
-# Setup backend dependencies
-cd backend
-pip install -r requirements.txt
-
-# Start FastAPI server
-uvicorn main:app --host 0.0.0.0 --port 8000
-```
-
-In another terminal, connect the frontend:
-
-```bash
-VITE_BACKEND_URL=http://localhost:8000 npm run dev
-```
-
----
-
-## Deployment Options
-
-### Option A — Frontend Only (Recommended & Instant)
-- Build the static assets: `npm run build`
-- Deploy the resulting `dist/` directory to **Vercel** (`npx vercel --prod`) or **Netlify** (via drag-and-drop on Netlify Drop or Netlify CLI).
-
-### Option B — Full-Stack
-- Deploy the `backend/` folder to **Render** or **Railway**:
-  - Start command: `uvicorn main:app --host 0.0.0.0 --port $PORT`
-  - Set Environment Variable: `TRENDPROOF_ORIGINS=https://your-frontend.vercel.app`
-- Deploy frontend to Vercel with: `VITE_BACKEND_URL=https://your-backend.onrender.com`
-
----
-
-## Demo Claims to Try
-
-1. *"Peshawar is getting hotter"* (Tests long-term warming trend in Khyber Pakhtunkhwa)
-2. *"Rainfall in Lahore is decreasing"* (Examines multi-decade precipitation trends)
-3. *"Karachi is getting more humid"* (Tests 2-meter relative humidity variations)
-4. *"Islamabad rainfall trend since 1990"* (Custom baseline analysis)
-5. *"London daily highs are increasing"* (Global comparative check)
-
----
-
-## NASA Earth Science Data Attribution
-
-- Data provided via the **NASA Langley Research Center POWER Project** funded through the NASA Earth Science / Applied Science Program.
-- Meteorology parameters based on the **NASA Global Modeling and Assimilation Office (GMAO) MERRA-2** reanalysis model.
-- Earth imagery courtesy of **NASA Goddard Space Flight Center Blue Marble Collection**.
-
----
-
-## License
-
-This project is licensed under the MIT License.
+GeoNames data is licensed under CC BY 4.0. See [geocoding data credits](frontend/public/geocoding/credits.txt).

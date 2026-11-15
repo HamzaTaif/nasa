@@ -2,20 +2,19 @@ import { useEffect, useRef, useState } from 'react'
 import {
   ArrowUpRight, CalendarDays, CircleAlert, Database, Download, Globe2, LoaderCircle, MapPin, Satellite, X,
 } from 'lucide-react'
-import { cities, examples, metrics, parseClaim, parseReportCard } from './claims'
+import { examples, metrics, parseClaim } from './claims'
+import { geocodeCity, reverseGeocode } from './geocode'
 import { analyzeClaim, POWER_DOCS, readSnapshot } from './power'
-import { geocodeCity } from './geocode'
-import { generateReportCard } from './reportcard'
 import SearchBar from './components/SearchBar'
 import TrendChart from './components/TrendChart'
 import VerdictCard, { signed } from './components/VerdictCard'
 import StatsPanel from './components/StatsPanel'
-import ReportCard from './components/ReportCard'
-import HeroGlobe, { claimForCity, nearestCity } from './components/HeroGlobe'
+import HeroGlobe from './components/HeroGlobe'
 
 const challenge = 'https://www.spaceappschallenge.org/2026/challenges/earth-system-trend-detective/'
 const imageCredit = 'https://science.nasa.gov/earth/earth-observatory/the-blue-marble-true-color-global-imagery-at-1km-resolution/'
 const globeCredits = `${import.meta.env.BASE_URL}globe/credits.txt`
+const mobileGlobeQuery = '(max-width: 780px) and (pointer: coarse)'
 
 function Brand() {
   return (
@@ -36,13 +35,14 @@ function Methodology({ dialog }) {
         <div className="method-icon"><Database size={20} /></div>
         <h2 id="method-title">Methodology</h2>
         <h3>What the claim tests</h3>
-        <p>Rule-based parsing extracts one listed city, one climate variable, a time window, and an optional trend direction. The default starts in 2001 and ends with the last complete calendar year. Try “Show the Peshawar temperature trend since 2010” or “Peshawar temperature is rising since 2010”.</p>
+        <p>Rule-based parsing extracts a city, one climate variable, a time window, and an optional trend direction. The default starts in 2001 and ends with the last complete calendar year. Try “Show the Seoul temperature trend since 2010”.</p>
         <h3>How annual values are built</h3>
         <p>NASA POWER supplies monthly values at the model grid cell covering the city coordinates. TrendProof requires all 12 months, weights monthly means by days, and sums corrected precipitation in millimeters. Meteorological estimates use NASA MERRA-2 reanalysis.</p>
         <h3>How the verdict works</h3>
         <p>Ordinary least squares fits the annual values over time. A two-sided Student t-test checks the zero-slope hypothesis at p &lt; 0.05. Confirmed means the slope agrees with the claim and passes the test. Partially true means the slope agrees and evidence is inconclusive. Not supported means the fitted slope is flat or points the other way.</p>
         <p>The test assumes independent residuals with constant variance. Serial correlation can affect the p-value. Unusual years are flagged when their residual exceeds twice the residual standard error. A trend describes the data within the selected years. Identifying its cause requires a separate study.</p>
-        <details><summary>Supported cities</summary><p>Worldwide coverage: any city, town, or location on Earth is supported via live OpenStreetMap geocoding and NASA coordinates. Regional centers ({cities.map(city => city.name).slice(0, 10).join(', ')}, etc.) include instant pre-cached snapshots.</p></details>
+        <h3>Worldwide city lookup</h3>
+        <p>For cities outside the catalog, TrendProof looks up coordinates with Nominatim using data from <a className="text-link" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a> and falls back to <a className="text-link" href="https://www.geonames.org/" target="_blank" rel="noreferrer">GeoNames</a>. Add a country or region when several cities share a name.</p>
         <details><summary>Supported climate metrics ({Object.keys(metrics).length})</summary><p>{Object.values(metrics).map(metric => metric.name).join(', ')}.</p></details>
         <a className="text-link" href={POWER_DOCS} target="_blank" rel="noreferrer">NASA POWER documentation <ArrowUpRight size={16} /></a>
       </div>
@@ -80,7 +80,7 @@ function Investigation({ result, onMethodology }) {
         <button className="download-btn" type="button" onClick={() => downloadCsv(result)}><Download size={16} aria-hidden="true" /> Download CSV</button>
       </div>
       <div className="claim-meta" aria-label="Parsed claim">
-        <span><MapPin size={15} aria-hidden="true" /> {result.city.name}, {result.city.country}</span>
+        <span><MapPin size={15} aria-hidden="true" /> {result.city.name}{result.city.country ? `, ${result.city.country}` : ''}</span>
         <span><CalendarDays size={15} aria-hidden="true" /> {result.start}–{result.end}</span>
         <span><Globe2 size={15} aria-hidden="true" /> {metric.label} / {direction}</span>
       </div>
@@ -109,13 +109,11 @@ function Investigation({ result, onMethodology }) {
 export default function App() {
   const [claim, setClaim] = useState('')
   const [result, setResult] = useState(null)
-  const [reportCard, setReportCard] = useState(null)
-  const [reportProgress, setReportProgress] = useState(null)
-  const [pendingClaim, setPendingClaim] = useState('')
+  const [pending, setPending] = useState(null)
   const [error, setError] = useState(null)
   const [globeSelection, setGlobeSelection] = useState(null)
   const [clickedPoint, setClickedPoint] = useState(null)
-  const root = useRef(null)
+  const globeSection = useRef(null)
   const activeRequest = useRef(null)
   const methodDialog = useRef(null)
 
@@ -145,97 +143,26 @@ export default function App() {
   }, [clickedPoint])
 
   function updateClaim(value) {
+    if (pending?.locatingPoint) {
+      activeRequest.current?.abort()
+      setPending(null)
+    }
     setClaim(value)
     setError(null)
   }
 
   function selectGlobeCity(city, source) {
-    if (!city) return
     setGlobeSelection(previous => ({ city, source, key: (previous?.key ?? 0) + 1 }))
   }
 
-  function selectGlobeLocation(location) {
-    const city = nearestCity(location)
-    if (!city) return
-    setClickedPoint(location)
-    setClaim(previous => claimForCity(previous, city))
-    setError(null)
-    selectGlobeCity(city, 'globe')
+  function onGlobeClick({ lat, lng }) {
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return
+    const query = `Temperature trend at coordinates ${lat.toFixed(6)}, ${lng.toFixed(6)}`
+    void verify(query, { point: { lat, lng } })
   }
 
-  async function runReportCard(rawInput) {
-    const text = (typeof rawInput === 'string' ? rawInput : claim).trim()
-    if (!text) {
-      setError({ message: 'Enter a city name to see its full climate report card.', input: true })
-      return
-    }
-
-    const rc = parseReportCard(text)
-    if (!rc) {
-      setError({ message: `Could not identify a city from "${text}". Try entering a city name like "Peshawar" or "Berlin".`, input: true })
-      return
-    }
-
-    setClickedPoint(null)
-    if (rc.city) selectGlobeCity(rc.city, 'claim')
-
-    activeRequest.current?.abort()
-    const controller = new AbortController()
-    activeRequest.current = controller
-    setPendingClaim(`Locating ${rc.searchQuery || rc.city?.name}...`)
-    setError(null)
-    setResult(null)
-    setReportCard(null)
-    setReportProgress({ done: 0, total: 7 })
-
-    try {
-      let city = rc.city
-      if (rc.needsGeocode) {
-        city = await geocodeCity(rc.searchQuery, controller.signal)
-        if (controller.signal.aborted) return
-        selectGlobeCity(city, 'claim')
-      }
-
-      setPendingClaim(`Analyzing all 7 climate metrics for ${city.name}...`)
-      const card = await generateReportCard(
-        city,
-        rc.start,
-        rc.end,
-        controller.signal,
-        (done, total) => {
-          if (!controller.signal.aborted) {
-            setReportProgress({ done, total })
-          }
-        }
-      )
-      if (controller.signal.aborted) return
-      setReportCard(card)
-      setReportProgress(null)
-      if (window.matchMedia('(max-width: 780px)').matches) {
-        requestAnimationFrame(() => root.current?.scrollIntoView({
-          behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth',
-          block: 'start',
-        }))
-      }
-    } catch (issue) {
-      if (!controller.signal.aborted) setError({ message: issue.message, input: false })
-    } finally {
-      if (!controller.signal.aborted) {
-        setPendingClaim('')
-        setReportProgress(null)
-      }
-    }
-  }
-
-  async function verify(value, fromExample = false) {
-    if (fromExample) setClaim(value)
-
-    // Check if the user entered a report card request or bare city name
-    const rc = parseReportCard(value)
-    if (rc && !fromExample) {
-      return runReportCard(value)
-    }
-
+  async function verify(value, { prefill = false, point = null } = {}) {
+    if (prefill) setClaim(value)
     let parsed
     try {
       parsed = parseClaim(value)
@@ -244,42 +171,60 @@ export default function App() {
       return
     }
 
-    setClickedPoint(null)
-    if (parsed.city) selectGlobeCity(parsed.city, 'claim')
-
     activeRequest.current?.abort()
     const controller = new AbortController()
     activeRequest.current = controller
-    setPendingClaim(parsed.claim)
+    setClickedPoint(null)
     setError(null)
-    setReportCard(null)
-    setReportProgress(null)
+    let locatingPoint = Boolean(point)
+    setPending(point ? { locatingPoint } : { claim: parsed.claim, cityQuery: parsed.needsGeocode ? parsed.cityQuery : null })
 
     try {
-      if (parsed.needsGeocode) {
-        setPendingClaim(`Locating ${parsed.searchQuery}...`)
-        const geoCity = await geocodeCity(parsed.searchQuery, controller.signal)
+      if (point) {
+        const place = await reverseGeocode(parsed.city.lat, parsed.city.lon, controller.signal)
         if (controller.signal.aborted) return
-        parsed.city = geoCity
-        selectGlobeCity(geoCity, 'claim')
-        setPendingClaim(parsed.claim)
+        const claim = place ? `${place.name} temperature trend` : 'Temperature trend at this location'
+        parsed = {
+          ...parsed,
+          claim,
+          city: { ...parsed.city, ...place, id: `reverse-${parsed.city.id}`, name: place?.name ?? 'Unmapped location' },
+        }
+        locatingPoint = false
+        setClaim(place ? claim : '')
+        setClickedPoint(point)
+        setPending({ claim })
       }
+      if (parsed.needsGeocode) {
+        const city = await geocodeCity(parsed.cityQuery, controller.signal)
+        if (controller.signal.aborted) return
+        parsed = { ...parsed, city: { ...city, geocoded: true }, needsGeocode: false }
+        setPending({ claim: parsed.claim, cityQuery: null })
+      }
+
+      selectGlobeCity(parsed.city, point ? 'globe' : 'claim')
+      if (!point && window.matchMedia('(max-width: 780px)').matches && !window.matchMedia(mobileGlobeQuery).matches) {
+        requestAnimationFrame(() => {
+          if (controller.signal.aborted) return
+          globeSection.current?.scrollIntoView({
+            behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth',
+            block: 'center',
+          })
+        })
+      }
+
       const verified = await analyzeClaim(parsed, controller.signal)
-      if (controller.signal.aborted) return
-      setResult(verified)
-      if (window.matchMedia('(max-width: 780px)').matches) {
-        requestAnimationFrame(() => root.current?.scrollIntoView({
-          behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth',
-          block: 'start',
-        }))
-      }
+      if (!controller.signal.aborted) setResult(verified)
     } catch (issue) {
-      if (!controller.signal.aborted) setError({ message: issue.message, input: false })
+      if (!controller.signal.aborted) {
+        const message = locatingPoint ? 'Could not look up this location. Try clicking again.' : issue.message
+        setError({ message, input: !parsed.city })
+      }
     } finally {
-      if (!controller.signal.aborted) setPendingClaim('')
+      if (!controller.signal.aborted) setPending(null)
     }
   }
 
+  const locatingStatus = pending?.locatingPoint ? 'Locating the clicked point' : pending?.cityQuery && `Locating ${pending.cityQuery}`
   const openMethodology = () => methodDialog.current.showModal()
 
   return (
@@ -301,58 +246,27 @@ export default function App() {
           <div className="art-stars" aria-hidden="true" />
           <div className="page-shell hero-inner">
             <div className="hero-content">
-              <div className="hero-pills">
-                <a href={POWER_DOCS} className="data-pill" target="_blank" rel="noreferrer"><Satellite size={14} aria-hidden="true" /> Powered by NASA POWER</a>
-                <span className="earth-pill">🌍 Works for any city on Earth</span>
-              </div>
+              <a href={POWER_DOCS} className="data-pill" target="_blank" rel="noreferrer"><Satellite size={14} aria-hidden="true" /> Powered by NASA POWER</a>
               <h1>Put climate claims<br className="hero-break" /> to the test.</h1>
-              <p className="hero-copy">Enter a claim about any city worldwide to explore the trend in NASA data and see how strong the evidence is.</p>
-              <SearchBar
-                value={claim}
-                onChange={updateClaim}
-                onSubmit={verify}
-                onExample={value => verify(value, true)}
-                onReportCard={runReportCard}
-                busy={Boolean(pendingClaim)}
-                invalid={error?.input}
-              />
+              <p className="hero-copy">Enter a claim about a city anywhere in the world and see what NASA climate data says.</p>
+              <SearchBar value={claim} onChange={updateClaim} onSubmit={verify} onExample={value => verify(value, { prefill: true })} busy={Boolean(pending)} invalid={error?.input} />
               {error && <div className="claim-error" id="claim-error" role="alert"><CircleAlert size={17} /> {error.message}</div>}
             </div>
-            <HeroGlobe selection={globeSelection} clickedPoint={clickedPoint} onLocationSelect={selectGlobeLocation} />
+            <HeroGlobe
+              sectionRef={globeSection}
+              selection={globeSelection}
+              clickedPoint={clickedPoint}
+              onLocationSelect={onGlobeClick}
+              hasAnalysis={!pending && Boolean(result)}
+            />
           </div>
         </section>
 
-        <section className="page-shell investigation" aria-label="Investigation results" ref={root} aria-busy={Boolean(pendingClaim)}>
-          <span className="sr-only" role="status">
-            {pendingClaim
-              ? `Checking ${pendingClaim}`
-              : reportCard
-              ? `Report card ready for ${reportCard.city.name}.`
-              : result
-              ? `Analysis ready. ${result.city.name}, ${result.start} to ${result.end}.`
-              : ''}
-          </span>
-          {pendingClaim ? (
-            <div className="panel loading-panel">
-              <LoaderCircle size={26} className="spin" />
-              <h2>{reportProgress ? 'Building Climate Report Card' : 'Checking the claim'}</h2>
-              <p>“{pendingClaim}”</p>
-              {reportProgress && (
-                <>
-                  <div className="rc-loading-bar" style={{ marginTop: '14px' }}>
-                    <div className="rc-loading-fill" style={{ width: `${(reportProgress.done / reportProgress.total) * 100}%` }} />
-                  </div>
-                  <p style={{ fontSize: '12px', marginTop: '6px', color: 'var(--subtle)' }}>
-                    Analyzed {reportProgress.done} of {reportProgress.total} NASA metrics
-                  </p>
-                </>
-              )}
-            </div>
-          ) : reportCard ? (
-            <ReportCard data={reportCard} />
-          ) : (
-            result && <Investigation result={result} onMethodology={openMethodology} />
-          )}
+        <section id="analysis" className="page-shell investigation" aria-label="Investigation results" aria-busy={Boolean(pending)}>
+          <span className="sr-only" role="status">{pending ? (locatingStatus || `Checking ${pending.claim}`) : result ? `Analysis ready. ${result.city.name}, ${result.start} to ${result.end}.` : ''}</span>
+          {pending
+            ? <div className="panel loading-panel"><LoaderCircle size={26} className="spin" /><h2>{locatingStatus || 'Checking the claim'}</h2>{pending.claim && <p>“{pending.claim}”</p>}</div>
+            : result && <Investigation result={result} onMethodology={openMethodology} />}
         </section>
       </main>
 

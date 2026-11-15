@@ -3,7 +3,7 @@ import { examples } from '../claims'
 
 const icons = { T2M: Thermometer, PRECTOTCORR: Droplets, RH2M: Waves }
 
-export default function SearchBar({ value, onChange, onSubmit, onExample, onReportCard, busy, invalid }) {
+export default function SearchBar({ value, onChange, onSubmit, onExample, busy, invalid }) {
   return (
     <div className="claim-control">
       <form className="claim-form" onSubmit={event => {
@@ -16,7 +16,7 @@ export default function SearchBar({ value, onChange, onSubmit, onExample, onRepo
           id="claim-input"
           value={value}
           onChange={event => onChange(event.target.value)}
-          placeholder="e.g. Peshawar is getting hotter"
+          placeholder="e.g. Riyadh is getting hotter"
           type="search"
           maxLength={220}
           required
@@ -33,14 +33,11 @@ export default function SearchBar({ value, onChange, onSubmit, onExample, onRepo
         {examples.map(example => {
           const Icon = icons[example.metric]
           return (
-            <button key={example.metric} className="example-btn" type="button" onClick={() => onExample(example.claim)}>
-              <Icon size={14} aria-hidden="true" /> {example.label}
+            <button key={example.claim} className="example-btn" type="button" onClick={() => onExample(example.claim)}>
+              {Icon && <Icon size={14} aria-hidden="true" />} {example.label}
             </button>
           )
         })}
-        <button className="rc-btn" type="button" disabled={busy || !value.trim()} onClick={() => onReportCard(value)}>
-          📋 Full Report Card
-        </button>
       </div>
     </div>
   )

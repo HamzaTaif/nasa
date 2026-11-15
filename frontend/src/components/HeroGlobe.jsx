@@ -1,9 +1,12 @@
-import { Component, lazy, Suspense, useState } from 'react'
+import { Component, lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { MapPin } from 'lucide-react'
-import { cities } from '../claims'
+import { cities, parseClaim } from '../claims'
+import { bindGlobePointer } from './globePointer'
+import { formatCityCoordinates, mobileGlobeQuery } from './globeVisuals'
 
 const WebGLEarth = lazy(() => import('./Globe'))
 const CanvasEarth = lazy(() => import('./CanvasEarth'))
+const keyRotations = { ArrowUp: [12, 0], ArrowDown: [-12, 0], ArrowLeft: [0, -18], ArrowRight: [0, 18] }
 
 function initialGlobeRenderer() {
   try {
@@ -18,19 +21,13 @@ function initialGlobeRenderer() {
   return 'canvas'
 }
 
-const escapeRegExp = text => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-const cityNames = cities.flatMap(city => [city.name, ...(city.aliases ?? [])].map(name => ({ name, country: city.country })))
-  .sort((first, second) => second.name.length - first.name.length)
-  .map(({ name, country }) => `${escapeRegExp(name)}(?:,?\\s+${escapeRegExp(country)})?`)
-const cityInClaim = new RegExp(`\\b(?:${cityNames.join('|')})\\b`, 'gi')
-
-export function nearestCity({ lat, lng }) {
+export function nearestCity({ lat, lng }, recentCities = []) {
   const radians = Math.PI / 180
   const latitude = lat * radians
   let closest = null
   let minimumDistance = Infinity
 
-  for (const city of cities) {
+  for (const city of [...cities, ...recentCities]) {
     const cityLatitude = city.lat * radians
     const latitudeDifference = cityLatitude - latitude
     const longitudeDifference = (city.lon - lng) * radians
@@ -47,18 +44,20 @@ export function nearestCity({ lat, lng }) {
 
 export function claimForCity(claim, city) {
   const draft = claim.trim()
-  const standardClaim = `Show the temperature trend in ${city.name}`
+  const location = city.geocoded && city.country ? `${city.name}, ${city.country}` : city.name
+  const standardClaim = `Show the temperature trend in ${location}`
   if (!draft) return standardClaim
-  const citiesInDraft = [...draft.matchAll(cityInClaim)]
-  if (citiesInDraft.length > 1) return standardClaim
-  const prefill = citiesInDraft.length === 1
-    ? draft.replace(cityInClaim, city.name)
-    : `${draft} in ${city.name}`
-  return prefill.length <= 220 ? prefill : standardClaim
-}
-
-function geographicCoordinate(value, positive, negative) {
-  return `${Math.abs(value).toFixed(2)}° ${value < 0 ? negative : positive}`
+  try {
+    const parsed = parseClaim(draft)
+    const query = parsed.cityQuery ?? parsed.city?.name
+    if (!query) return standardClaim
+    const index = parsed.claim.toLocaleLowerCase('en-US').indexOf(query.toLocaleLowerCase('en-US'))
+    if (index === -1) return standardClaim
+    const prefill = parsed.claim.slice(0, index) + location + parsed.claim.slice(index + query.length)
+    return prefill.length <= 220 ? prefill : standardClaim
+  } catch {
+    return standardClaim
+  }
 }
 
 class GlobeBoundary extends Component {
@@ -77,20 +76,97 @@ class GlobeBoundary extends Component {
   }
 }
 
-export default function HeroGlobe({ selection, clickedPoint, onLocationSelect }) {
-  const [renderer, setRenderer] = useState(initialGlobeRenderer)
+export default function HeroGlobe({ sectionRef, selection, clickedPoint, onLocationSelect, hasAnalysis }) {
+  const [mobilePoster, setMobilePoster] = useState(() => window.matchMedia(mobileGlobeQuery).matches)
+  const [renderer, setRenderer] = useState(() => mobilePoster ? 'poster' : initialGlobeRenderer())
   const [ready, setReady] = useState(false)
+  const controller = useRef(null)
+  const input = useRef(null)
+  const label = useRef(null)
+  const selectLocation = useRef(onLocationSelect)
+  useEffect(() => {
+    selectLocation.current = onLocationSelect
+  }, [onLocationSelect])
+  useEffect(() => {
+    const preference = window.matchMedia(mobileGlobeQuery)
+    function update(event) {
+      setMobilePoster(event.matches)
+      setReady(false)
+      setRenderer(event.matches ? 'poster' : initialGlobeRenderer())
+    }
+    preference.addEventListener('change', update)
+    return () => preference.removeEventListener('change', update)
+  }, [])
   const city = selection?.city
+  const pinName = city?.id?.startsWith('point-')
+    ? 'Selected point'
+    : [city?.name, city?.country].filter(Boolean).join(', ')
+  const coordinates = city && formatCityCoordinates(city)
   const interactive = ready && renderer !== 'poster'
   const Earth = renderer === 'webgl' ? WebGLEarth : CanvasEarth
 
-  function onUnavailable() {
-    setReady(false)
-    setRenderer(renderer === 'webgl' ? 'canvas' : 'poster')
+  useEffect(() => {
+    if (!interactive) return
+    const surface = input.current
+    return bindGlobePointer(surface, {
+      onStart() {
+        surface.dataset.pointerFocus = 'true'
+        surface.focus({ preventScroll: true })
+        controller.current?.start()
+        surface.dataset.held = 'true'
+      },
+      onDrag(delta) {
+        controller.current?.drag(delta, surface)
+      },
+      onEnd(velocity) {
+        controller.current?.end(velocity, surface)
+        delete surface.dataset.held
+      },
+      onSelect(event) {
+        const location = controller.current?.pick(event)
+        if (location) selectLocation.current(location)
+      },
+    })
+  }, [interactive, renderer])
+
+  function onGlobeKeyDown(event) {
+    delete event.currentTarget.dataset.pointerFocus
+    const offset = keyRotations[event.key]
+    if (offset) {
+      event.preventDefault()
+      controller.current?.nudge(...offset)
+    } else if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      const location = controller.current?.center()
+      if (location) onLocationSelect(location)
+    }
   }
 
+  function onUnavailable() {
+    setReady(false)
+    setRenderer(current => current !== renderer ? current : current === 'webgl' ? 'canvas' : 'poster')
+  }
+
+  useEffect(() => {
+    if (ready || renderer === 'poster') return
+    let timeout
+    function watchRenderer() {
+      window.clearTimeout(timeout)
+      if (document.hidden) return
+      timeout = window.setTimeout(() => {
+        setRenderer(current => current !== renderer ? current : current === 'webgl' ? 'canvas' : 'poster')
+      }, 12000)
+    }
+    watchRenderer()
+    document.addEventListener('visibilitychange', watchRenderer)
+    return () => {
+      window.clearTimeout(timeout)
+      document.removeEventListener('visibilitychange', watchRenderer)
+    }
+  }, [ready, renderer])
+
   return (
-    <figure className="hero-globe" data-renderer={renderer} aria-label="Earth globe" aria-describedby={interactive ? 'globe-keyboard' : undefined}>
+    <figure ref={sectionRef} className="hero-globe" data-renderer={renderer} aria-label="Earth globe" aria-describedby={interactive ? 'globe-keyboard' : undefined}>
       <div className="hero-globe-scene">
         {!interactive && (
           <div className="hero-globe-poster" aria-hidden="true">
@@ -104,9 +180,9 @@ export default function HeroGlobe({ selection, clickedPoint, onLocationSelect })
                 <Earth
                   selectedCity={city}
                   selectionKey={selection?.key}
-                  paused={false}
                   clickedPoint={clickedPoint}
-                  onLocationSelect={onLocationSelect}
+                  controllerRef={controller}
+                  labelRef={label}
                   onReady={() => setReady(true)}
                   onUnavailable={onUnavailable}
                 />
@@ -114,24 +190,45 @@ export default function HeroGlobe({ selection, clickedPoint, onLocationSelect })
             </GlobeBoundary>
           </div>
         )}
+        {city && renderer !== 'poster' && (
+          <div key={selection?.key} ref={label} className="globe-pin-label" hidden aria-hidden="true">
+            <span>{pinName}</span>
+            <small>{coordinates}</small>
+          </div>
+        )}
+        {interactive && (
+          <div
+            ref={input}
+            className="globe-input-surface"
+            role="group"
+            aria-label="Interactive Earth globe"
+            aria-describedby="globe-keyboard"
+            tabIndex={0}
+            onKeyDown={onGlobeKeyDown}
+            onBlur={event => { delete event.currentTarget.dataset.pointerFocus }}
+          />
+        )}
       </div>
       <figcaption className="hero-globe-caption">
         <span className="hero-globe-selection" role="status">
           {city && (
             <>
-              <span className="hero-globe-location"><MapPin size={13} aria-hidden="true" /> {city.name}, {city.country}</span>
+              <span className="hero-globe-location"><MapPin size={13} aria-hidden="true" /> {pinName}</span>
               <span className="hero-globe-coordinates">
-                {geographicCoordinate(city.lat, 'N', 'S')} <span aria-hidden="true">·</span> {geographicCoordinate(city.lon, 'E', 'W')}
+                {' · '}{coordinates.replace(' · ', ', ')}
               </span>
             </>
           )}
         </span>
-        {interactive && (
+        {interactive ? (
           <>
-            <span>{selection?.source === 'globe' ? 'Nearest supported city' : 'Drag to rotate · Select a location'}</span>
+            <span className="globe-instructions">Drag to rotate · Click to select</span>
             <span className="sr-only" id="globe-keyboard">Use the arrow keys to rotate the globe. Press Enter or Space to select the center.</span>
           </>
-        )}
+        ) : mobilePoster ? null : renderer === 'poster' ? (
+          <button className="globe-retry" type="button" onClick={() => setRenderer(initialGlobeRenderer)}>Retry interactive globe</button>
+        ) : <span role="status">Loading interactive globe…</span>}
+        {hasAnalysis && <a href="#analysis" className="globe-analysis-link">View analysis</a>}
       </figcaption>
     </figure>
   )
